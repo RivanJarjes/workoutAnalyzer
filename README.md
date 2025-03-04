@@ -1,5 +1,5 @@
-# Lat pull-down Form Analyzer
-A computer vision application that analyzes pull-up form using pose estimation and machine learning to identify common errors and count repetitions.
+# Lateral Pull-down Form Analyzer
+A computer vision application that analyzes Lateral Pull-down form using pose estimation and machine learning to identify common errors and count repetitions.
 
 ## Features
 
