@@ -73,7 +73,7 @@ if not capture.isOpened():
     exit()
 
 # Prepare CSV file for storing selected landmark data and computed angles
-output_csv = 'right_arm_head_spine_output.csv'
+output_csv = 'output.csv'
 csv_file = open(output_csv, 'w', newline='')
 csv_writer = csv.writer(csv_file)
 

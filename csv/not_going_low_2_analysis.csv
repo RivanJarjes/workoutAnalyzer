@@ -1,0 +1,7 @@
+﻿rep,not_high,not_low,excessive_lean,excessive_elbow_flare,elbows_too_far,behind_neck,error_present
+0,0,1,0,0,0,0,1
+1,0,1,1,0,0,0,1
+2,0,1,1,0,0,0,1
+3,0,1,0,0,0,0,1
+4,0,1,0,0,0,0,1
+5,0,0,0,0,0,0,0

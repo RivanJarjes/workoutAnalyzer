@@ -1,3 +1,11 @@
 res/
-
-
+.gitignore
+.DS_Store
+*.mp4
+*.mp3
+*.wav
+*.avi
+*.mov
+*.flv
+*.wmv
+tempCodeRunnerFile.py
