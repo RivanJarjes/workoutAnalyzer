@@ -1,0 +1,16 @@
+name: workoutAnalysis
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - tensorflow
+  - numpy
+  - pandas
+  - matplotlib
+  - scikit-learn
+  - opencv
+  - joblib
+  - pip
+  - pip:
+    - mediapipe

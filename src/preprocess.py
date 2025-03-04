@@ -14,6 +14,8 @@ from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
 from tensorflow.keras.metrics import AUC, Precision, Recall
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.linear_model import LogisticRegression
+import joblib
+import pickle
 
 # Read the merged CSV file
 path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "merged_training_data.csv"))
@@ -33,7 +35,7 @@ feature_columns = [
 # Define label columns
 label_columns = [
     "not_high", "not_low", "excessive_lean", "excessive_elbow_flare",
-    "elbows_too_far", "error_present"
+    "elbows_too_far"
 ]
 
 # Analyze the data distribution
@@ -150,4 +152,10 @@ for model_type, label, accuracy in results:
 for model_type, model_obj, idx in models:
     if model_type == 'nn':
         model_obj.save(f"{label_columns[idx]}_model.h5")
+    elif model_type == 'logreg':
+        with open(f"{label_columns[idx]}_logreg.pkl", 'wb') as f:
+            pickle.dump(model_obj, f)
+
+# Save the scaler for use in the main application
+joblib.dump(scaler, 'feature_scaler.joblib')
 

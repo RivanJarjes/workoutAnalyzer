@@ -1,9 +1,28 @@
 import cv2 as cv
 import numpy as np
+# Import and apply the patch before importing mediapipe
 import mediapipe as mp
 import csv
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
+import tensorflow as tf
+from sklearn.preprocessing import StandardScaler
+import joblib
+import os
+from tensorflow.keras.models import load_model
+from sklearn.linear_model import LogisticRegression
+import pickle
+
+# Function to get user-friendly error messages - MOVED TO TOP
+def get_error_message(error_type):
+    messages = {
+        "not_high": "Bar not pulled high enough",
+        "not_low": "Not starting from full extension",
+        "excessive_lean": "Excessive back lean",
+        "excessive_elbow_flare": "Elbows flaring too much",
+        "elbows_too_far": "Elbows too far forward/back"
+    }
+    return messages.get(error_type, error_type)
 
 # Open a file dialog to select a video file
 Tk().withdraw()
@@ -18,6 +37,71 @@ pose = mp_pose.Pose(
     min_tracking_confidence=0.5
 )
 mp_drawing = mp.solutions.drawing_utils
+
+# Load trained models and scaler
+def load_models():
+    models = {}
+    # List of possible error types
+    error_types = [
+        "not_high", "not_low", "excessive_lean", 
+        "excessive_elbow_flare", "elbows_too_far"
+    ]
+    
+    # Load scaler
+    try:
+        # First try to load from the same directory as the script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        scaler_path = os.path.join(script_dir, 'feature_scaler.joblib')
+        if os.path.exists(scaler_path):
+            scaler = joblib.load(scaler_path)
+        else:
+            # Try current working directory
+            scaler = joblib.load('feature_scaler.joblib')
+        print("Loaded feature scaler successfully")
+    except Exception as e:
+        print(f"Warning: Scaler not found. Will create a new one. Error: {e}")
+        scaler = StandardScaler()
+    
+    # Load each model
+    for error_type in error_types:
+        # Try loading neural network model
+        try:
+            # Try different possible locations
+            model_paths = [
+                f"{error_type}_model.h5",  # Current directory
+                os.path.join(script_dir, f"{error_type}_model.h5"),  # Script directory
+                os.path.join(os.path.dirname(script_dir), f"{error_type}_model.h5")  # Parent directory
+            ]
+            
+            for path in model_paths:
+                if os.path.exists(path):
+                    models[error_type] = ('nn', load_model(path))
+                    print(f"Loaded neural network model for {error_type} from {path}")
+                    break
+            else:
+                # If no model found, try logistic regression
+                logreg_paths = [
+                    f"{error_type}_logreg.pkl",
+                    os.path.join(script_dir, f"{error_type}_logreg.pkl"),
+                    os.path.join(os.path.dirname(script_dir), f"{error_type}_logreg.pkl")
+                ]
+                
+                for path in logreg_paths:
+                    if os.path.exists(path):
+                        with open(path, 'rb') as f:
+                            models[error_type] = ('logreg', pickle.load(f))
+                        print(f"Loaded logistic regression model for {error_type} from {path}")
+                        break
+                else:
+                    print(f"Warning: No model found for {error_type}. Prediction will not be available.")
+                    
+        except Exception as e:
+            print(f"Error loading model for {error_type}: {e}")
+    
+    return models, scaler
+
+# Load models
+models, scaler = load_models()
 
 # Function to calculate the angle (in degrees) between three points.
 # Here, a, b, and c should be lists or arrays of [x, y].
@@ -60,6 +144,30 @@ def calculate_head_angle(left_ear, right_ear):
     angle = np.degrees(np.arctan2(vector[1], vector[0]))
     return angle
 
+# Function to analyze form using loaded models
+def analyze_form(feature_vector, models, scaler):
+    try:
+        # Create feature array from current frame data
+        features = np.array([feature_vector]).astype(np.float64)
+        
+        # Scale features
+        scaled_features = scaler.transform(features)
+        
+        # Predict from each model
+        predictions = {}
+        for error_type, (model_type, model) in models.items():
+            if model_type == 'nn':
+                pred = model.predict(scaled_features, verbose=0)[0][0]
+                predictions[error_type] = bool(pred > 0.5)
+            else:  # logreg
+                pred = model.predict(scaled_features)[0]
+                predictions[error_type] = bool(pred)
+        
+        return predictions
+    except Exception as e:
+        print(f"Error in analyze_form: {e}")
+        return {}  # Return empty dict on error
+
 # Rep counting variables (using right arm movement)
 repCount = 0
 prev_angle = None
@@ -87,6 +195,7 @@ header.extend(['elbow_angle', 'head_angle', 'spine_angle'])
 csv_writer.writerow(header)
 
 frame_index = 0  # To track the current frame number
+feature_buffer = []  # Store recent features for smoothing predictions
 
 # Main loop: process video frame by frame
 while capture.isOpened():
@@ -244,9 +353,40 @@ while capture.isOpened():
             lm = landmarks[lm_enum]
             feature_vector.extend([lm.x, lm.y, lm.z, lm.visibility])
         
+        # Add computed angles to feature vector
+        feature_vector.extend([elbow_angle, head_angle, spine_angle])
+        
+        # Store feature in buffer
+        if len(feature_buffer) >= 5:  # Keep last 5 frames
+            feature_buffer.pop(0)
+        feature_buffer.append(feature_vector)
+        
+        # Only analyze form if we have enough frames and models are loaded
+        if len(feature_buffer) >= 3 and models:
+            # Use average of last few frames for smoother predictions
+            avg_features = np.mean(feature_buffer, axis=0)
+            
+            # Analyze form
+            form_errors = analyze_form(avg_features[0:15], models, scaler)  # First 15 elements match training features
+            
+            # Display form errors on frame
+            y_pos = 200
+            for error_type, is_error in form_errors.items():
+                if is_error:
+                    error_message = get_error_message(error_type)
+                    cv.putText(frame, error_message, 
+                              (10, y_pos), 
+                              cv.FONT_HERSHEY_SIMPLEX, 
+                              0.7, (0, 0, 0), 8, cv.LINE_AA)
+                    cv.putText(frame, error_message, 
+                              (10, y_pos), 
+                              cv.FONT_HERSHEY_SIMPLEX, 
+                              0.7, (0, 0, 255), 2, cv.LINE_AA)
+                    y_pos += 30
+        
         # Write current frame data to CSV:
         # Format: [frame_index, repCount, <landmark features>, elbow_angle, head_angle, spine_angle]
-        csv_row = [frame_index, repCount] + feature_vector + [elbow_angle, head_angle, spine_angle]
+        csv_row = [frame_index, repCount] + feature_vector
         csv_writer.writerow(csv_row)
     
     cv.imshow('Frame', frame)
@@ -258,3 +398,6 @@ while capture.isOpened():
 capture.release()
 cv.destroyAllWindows()
 csv_file.close()
+
+# Save scaler for future use
+joblib.dump(scaler, 'feature_scaler.joblib')

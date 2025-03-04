@@ -9,3 +9,10 @@ res/
 *.flv
 *.wmv
 tempCodeRunnerFile.py
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
